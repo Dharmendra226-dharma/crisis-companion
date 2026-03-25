@@ -5,6 +5,7 @@ import { UserInfoCard } from "@/components/dashboard/UserInfoCard";
 import { LpgStatusCard } from "@/components/dashboard/LpgStatusCard";
 import { StockAvailabilityCard } from "@/components/dashboard/StockAvailabilityCard";
 import { PriceWatchCard } from "@/components/dashboard/PriceWatchCard";
+import { PriceHistoryChart } from "@/components/dashboard/PriceHistoryChart";
 import { AlertsHistoryCard } from "@/components/dashboard/AlertsHistoryCard";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, ArrowLeft } from "lucide-react";
@@ -38,6 +39,7 @@ const Dashboard = () => {
 
   const [user, setUser] = useState<UserData | null>(null);
   const [latestLog, setLatestLog] = useState<MonitoringLog | null>(null);
+  const [priceLogs, setPriceLogs] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,14 +55,16 @@ const Dashboard = () => {
     if (!uid) return;
     setLoading(true);
 
-    const [userRes, logRes, alertRes] = await Promise.all([
+    const [userRes, logRes, priceLogsRes, alertRes] = await Promise.all([
       supabase.from("users").select("*").eq("id", uid).single(),
       supabase.from("monitoring_logs").select("*").eq("user_id", uid).order("created_at", { ascending: false }).limit(1),
+      supabase.from("monitoring_logs").select("price_data, created_at").eq("user_id", uid).order("created_at", { ascending: false }).limit(30),
       supabase.from("alerts").select("*").eq("user_id", uid).order("sent_at", { ascending: false }).limit(20),
     ]);
 
     if (userRes.data) setUser(userRes.data as UserData);
     if (logRes.data && logRes.data.length > 0) setLatestLog(logRes.data[0] as MonitoringLog);
+    if (priceLogsRes.data) setPriceLogs(priceLogsRes.data);
     if (alertRes.data) setAlerts(alertRes.data as Alert[]);
 
     setLoading(false);
@@ -140,6 +144,10 @@ const Dashboard = () => {
 
           <div className="lg:col-span-1">
             <PriceWatchCard data={priceData} />
+          </div>
+
+          <div className="lg:col-span-3">
+            <PriceHistoryChart logs={priceLogs} />
           </div>
 
           <div className="lg:col-span-3">

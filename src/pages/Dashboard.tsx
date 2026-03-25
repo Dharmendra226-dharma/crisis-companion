@@ -167,6 +167,8 @@ const Dashboard = () => {
           </div>
         </div>
       </main>
+
+      {uid && <CrisisChatBar userId={uid} />}
     </div>
   );
 };

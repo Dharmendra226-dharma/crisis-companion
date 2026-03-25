@@ -14,61 +14,73 @@ async function sendViaGmailSMTP(to: string, subject: string, htmlBody: string, t
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
 
-  async function readLine(): Promise<string> {
+  async function readResponse(): Promise<string> {
+    let result = "";
     const buf = new Uint8Array(4096);
-    const n = await conn.read(buf);
-    return n ? decoder.decode(buf.subarray(0, n)) : "";
+    while (true) {
+      const n = await conn.read(buf);
+      if (!n) break;
+      result += decoder.decode(buf.subarray(0, n));
+      const lines = result.trim().split("\r\n");
+      const lastLine = lines[lines.length - 1];
+      if (lastLine.length >= 4 && lastLine[3] === " ") break;
+      if (result.length > 8192) break;
+    }
+    return result;
   }
 
   async function send(cmd: string) {
     await conn.write(encoder.encode(cmd + "\r\n"));
   }
 
-  await readLine();
-  await send("EHLO localhost");
-  await readLine();
+  try {
+    await readResponse();
+    await send("EHLO localhost");
+    await readResponse();
 
-  await send("AUTH LOGIN");
-  await readLine();
-  await send(btoa(GMAIL_USER));
-  await readLine();
-  await send(btoa(GMAIL_APP_PASSWORD));
-  const authResp = await readLine();
-  if (!authResp.startsWith("235")) throw new Error("SMTP auth failed: " + authResp);
+    await send("AUTH LOGIN");
+    await readResponse();
+    await send(btoa(GMAIL_USER));
+    await readResponse();
+    await send(btoa(GMAIL_APP_PASSWORD));
+    const authResp = await readResponse();
+    if (!authResp.includes("235")) throw new Error("SMTP auth failed: " + authResp.trim());
 
-  await send(`MAIL FROM:<${GMAIL_USER}>`);
-  await readLine();
-  await send(`RCPT TO:<${to}>`);
-  await readLine();
-  await send("DATA");
-  await readLine();
+    await send(`MAIL FROM:<${GMAIL_USER}>`);
+    await readResponse();
+    await send(`RCPT TO:<${to}>`);
+    await readResponse();
+    await send("DATA");
+    await readResponse();
 
-  const boundary = "----=_Part_" + crypto.randomUUID().replace(/-/g, "");
-  const message = [
-    `From: Crisis Companion <${GMAIL_USER}>`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    `MIME-Version: 1.0`,
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    ``,
-    `--${boundary}`,
-    `Content-Type: text/plain; charset=UTF-8`,
-    ``,
-    textBody || "Please view this email in an HTML-compatible client.",
-    ``,
-    `--${boundary}`,
-    `Content-Type: text/html; charset=UTF-8`,
-    ``,
-    htmlBody || `<p>${textBody || subject}</p>`,
-    ``,
-    `--${boundary}--`,
-    `.`,
-  ].join("\r\n");
+    const boundary = "----=_Part_" + crypto.randomUUID().replace(/-/g, "");
+    const message = [
+      `From: Crisis Companion <${GMAIL_USER}>`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      ``,
+      `--${boundary}`,
+      `Content-Type: text/plain; charset=UTF-8`,
+      ``,
+      textBody || "Please view this email in an HTML-compatible client.",
+      ``,
+      `--${boundary}`,
+      `Content-Type: text/html; charset=UTF-8`,
+      ``,
+      htmlBody || `<p>${textBody || subject}</p>`,
+      ``,
+      `--${boundary}--`,
+      `.`,
+    ].join("\r\n");
 
-  await conn.write(encoder.encode(message + "\r\n"));
-  await readLine();
-  await send("QUIT");
-  conn.close();
+    await conn.write(encoder.encode(message + "\r\n"));
+    await readResponse();
+    await send("QUIT");
+  } finally {
+    try { conn.close(); } catch { /* ignore */ }
+  }
 }
 
 serve(async (req) => {

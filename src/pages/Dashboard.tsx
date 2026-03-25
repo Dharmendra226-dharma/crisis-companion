@@ -8,6 +8,7 @@ import { DealerMapCard } from "@/components/dashboard/DealerMapCard";
 import { PriceWatchCard } from "@/components/dashboard/PriceWatchCard";
 import { PriceHistoryChart } from "@/components/dashboard/PriceHistoryChart";
 import { AlertsHistoryCard } from "@/components/dashboard/AlertsHistoryCard";
+import { CrisisChatBar } from "@/components/dashboard/CrisisChatBar";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, ArrowLeft } from "lucide-react";
 
@@ -166,6 +167,8 @@ const Dashboard = () => {
           </div>
         </div>
       </main>
+
+      {uid && <CrisisChatBar userId={uid} />}
     </div>
   );
 };

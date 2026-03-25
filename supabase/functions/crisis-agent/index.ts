@@ -30,15 +30,18 @@ serve(async (req) => {
       const stockStatus = generateStockData();
       const priceData = generatePriceData();
 
-      // Get previous log to compare
-      const { data: prevLogs } = await supabase
-        .from("monitoring_logs")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
+      // Get previous log and chat history for personalization
+      const [prevLogsRes, chatRes] = await Promise.all([
+        supabase.from("monitoring_logs").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1),
+        supabase.from("chat_messages").select("role, content").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
+      ]);
 
-      const prevLog = prevLogs?.[0];
+      const prevLog = prevLogsRes.data?.[0];
+      const chatHistory = chatRes.data || [];
+
+      // Extract user interests from chat history
+      const userQueries = chatHistory.filter((m: any) => m.role === "user").map((m: any) => m.content).join("; ");
+      const userInterests = userQueries ? `\nUser's recent queries/interests: ${userQueries}` : "";
 
       // Call AI to analyze changes and generate insights
       const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -52,15 +55,18 @@ serve(async (req) => {
           messages: [
             {
               role: "system",
-              content: `You are a crisis monitoring AI agent. Analyze supply data and generate actionable insights. 
-              Be concise and practical. Only flag important changes. 
+              content: `You are a crisis monitoring AI agent. Analyze supply data and generate actionable insights.
+              Be concise and practical. Only flag important changes.
+              IMPORTANT: Personalize recommendations based on the user's chat history and interests.
+              If the user has asked about specific items, prioritize alerts about those items.
               Output JSON with: { shouldAlert: boolean, urgency: "low"|"medium"|"high", summary: string, recommendations: string[] }
               Set shouldAlert=true ONLY if there are significant changes worth notifying the user about.`,
             },
             {
               role: "user",
               content: `User PIN: ${user.pincode || "Unknown"}
-              
+${userInterests}
+
 Current data:
 LPG: ${JSON.stringify(lpgStatus)}
 Stock: ${JSON.stringify(stockStatus)}
@@ -68,7 +74,7 @@ Prices: ${JSON.stringify(priceData)}
 
 Previous data: ${prevLog ? JSON.stringify({ lpg: prevLog.lpg_status, stock: prevLog.stock_status, price: prevLog.price_data }) : "No previous data (first scan)"}
 
-Analyze changes and determine if the user should be alerted.`,
+Analyze changes and determine if the user should be alerted. Personalize based on their interests.`,
             },
           ],
           tools: [

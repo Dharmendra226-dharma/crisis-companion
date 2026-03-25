@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { UserInfoCard } from "@/components/dashboard/UserInfoCard";
 import { LpgStatusCard } from "@/components/dashboard/LpgStatusCard";
 import { StockAvailabilityCard } from "@/components/dashboard/StockAvailabilityCard";
+import { DealerMapCard } from "@/components/dashboard/DealerMapCard";
 import { PriceWatchCard } from "@/components/dashboard/PriceWatchCard";
 import { PriceHistoryChart } from "@/components/dashboard/PriceHistoryChart";
 import { AlertsHistoryCard } from "@/components/dashboard/AlertsHistoryCard";
@@ -146,7 +147,15 @@ const Dashboard = () => {
             <PriceWatchCard data={priceData} />
           </div>
 
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
+            <DealerMapCard
+              dealers={lpgStatus.dealers}
+              userLat={user.latitude}
+              userLng={user.longitude}
+            />
+          </div>
+
+          <div className="lg:col-span-1">
             <PriceHistoryChart logs={priceLogs} />
           </div>
 

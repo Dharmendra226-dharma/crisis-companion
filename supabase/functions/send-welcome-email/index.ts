@@ -1,28 +1,94 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function sendViaGmailSMTP(to: string, subject: string, htmlBody: string) {
+  const GMAIL_USER = Deno.env.get("GMAIL_USER");
+  const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD");
+  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) throw new Error("Gmail SMTP not configured");
+
+  // Use Gmail's SMTP relay via a raw TLS connection
+  const conn = await Deno.connectTls({ hostname: "smtp.gmail.com", port: 465 });
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  async function readLine(): Promise<string> {
+    const buf = new Uint8Array(4096);
+    const n = await conn.read(buf);
+    return n ? decoder.decode(buf.subarray(0, n)) : "";
+  }
+
+  async function send(cmd: string) {
+    await conn.write(encoder.encode(cmd + "\r\n"));
+  }
+
+  // Read greeting
+  await readLine();
+  await send("EHLO localhost");
+  await readLine();
+
+  // AUTH LOGIN
+  await send("AUTH LOGIN");
+  await readLine();
+  await send(btoa(GMAIL_USER));
+  await readLine();
+  await send(btoa(GMAIL_APP_PASSWORD));
+  const authResp = await readLine();
+  if (!authResp.startsWith("235")) throw new Error("SMTP auth failed: " + authResp);
+
+  await send(`MAIL FROM:<${GMAIL_USER}>`);
+  await readLine();
+  await send(`RCPT TO:<${to}>`);
+  await readLine();
+  await send("DATA");
+  await readLine();
+
+  const boundary = "----=_Part_" + crypto.randomUUID().replace(/-/g, "");
+  const message = [
+    `From: Crisis Companion <${GMAIL_USER}>`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/plain; charset=UTF-8`,
+    ``,
+    `Welcome to Crisis Companion!`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/html; charset=UTF-8`,
+    ``,
+    htmlBody,
+    ``,
+    `--${boundary}--`,
+    `.`,
+  ].join("\r\n");
+
+  await conn.write(encoder.encode(message + "\r\n"));
+  await readLine();
+  await send("QUIT");
+  conn.close();
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const GMAIL_USER = Deno.env.get("GMAIL_USER");
-    const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD");
-    if (!GMAIL_USER || !GMAIL_APP_PASSWORD) throw new Error("Gmail SMTP not configured");
-
     const { to, type } = await req.json();
     if (!to) throw new Error("Missing recipient email");
 
-    let subject: string;
-    let htmlBody: string;
+    if (type !== "welcome") {
+      return new Response(JSON.stringify({ error: "Unknown email type" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    if (type === "welcome") {
-      subject = "🎉 Welcome to Crisis Companion — You're All Set!";
-      htmlBody = `<!DOCTYPE html>
+    const subject = "🎉 Welcome to Crisis Companion — You're All Set!";
+    const htmlBody = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;">
@@ -36,16 +102,16 @@ serve(async (req) => {
         You've successfully activated <strong>Crisis Companion Agent</strong>. Here's what happens next:
       </p>
       <table width="100%" cellpadding="0" cellspacing="0">
-        <tr><td style="padding:12px 16px;background:#f0fdf4;border-radius:8px;margin-bottom:8px;">
+        <tr><td style="padding:12px 16px;background:#f0fdf4;border-radius:8px;">
           <strong style="color:#16a34a;">✅ Real-time Monitoring Active</strong>
-          <p style="color:#475569;margin:4px 0 0;font-size:13px;">We'll scan LPG availability, stock levels & prices every 30 minutes.</p>
+          <p style="color:#475569;margin:4px 0 0;font-size:13px;">We'll scan LPG availability, stock levels & prices continuously.</p>
         </td></tr>
       </table>
       <div style="height:12px;"></div>
       <table width="100%" cellpadding="0" cellspacing="0">
         <tr><td style="padding:12px 16px;background:#eff6ff;border-radius:8px;">
           <strong style="color:#2563eb;">📊 Personalized Alerts</strong>
-          <p style="color:#475569;margin:4px 0 0;font-size:13px;">You'll only receive emails when something important changes — no spam, ever.</p>
+          <p style="color:#475569;margin:4px 0 0;font-size:13px;">You'll receive emails only when something important changes — no spam, ever.</p>
         </td></tr>
       </table>
       <div style="height:12px;"></div>
@@ -56,9 +122,7 @@ serve(async (req) => {
         </td></tr>
       </table>
       <div style="height:24px;"></div>
-      <p style="color:#475569;line-height:1.6;">
-        <strong>What you'll be notified about:</strong>
-      </p>
+      <p style="color:#475569;line-height:1.6;"><strong>What you'll be notified about:</strong></p>
       <ul style="color:#475569;line-height:1.8;padding-left:20px;">
         <li>LPG cylinder restocking near your area</li>
         <li>Price spikes or deals on essentials</li>
@@ -69,8 +133,7 @@ serve(async (req) => {
         You can also ask our AI assistant any crisis-related questions directly from your dashboard.
       </p>
       <p style="color:#64748b;font-size:13px;margin:24px 0 0;border-top:1px solid #e2e8f0;padding-top:16px;">
-        Stay safe and stay informed.<br/>
-        <strong>— Crisis Companion Team</strong>
+        Stay safe and stay informed.<br/><strong>— Crisis Companion Team</strong>
       </p>
     </td></tr>
     <tr><td style="background:#f8fafc;padding:16px 32px;text-align:center;color:#94a3b8;font-size:11px;">
@@ -78,16 +141,8 @@ serve(async (req) => {
     </td></tr>
   </table>
 </body></html>`;
-    } else {
-      return new Response(JSON.stringify({ error: "Unknown email type" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    const client = new SmtpClient();
-    await client.connectTLS({ hostname: "smtp.gmail.com", port: 465, username: GMAIL_USER, password: GMAIL_APP_PASSWORD });
-    await client.send({ from: GMAIL_USER, to, subject, content: "Welcome to Crisis Companion!", html: htmlBody });
-    await client.close();
+    await sendViaGmailSMTP(to, subject, htmlBody);
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

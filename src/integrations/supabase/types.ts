@@ -14,7 +14,103 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      alerts: {
+        Row: {
+          id: string
+          message: string
+          sent_at: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          message: string
+          sent_at?: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          message?: string
+          sent_at?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alerts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monitoring_logs: {
+        Row: {
+          ai_insights: Json | null
+          created_at: string
+          id: string
+          lpg_status: Json | null
+          price_data: Json | null
+          stock_status: Json | null
+          user_id: string
+        }
+        Insert: {
+          ai_insights?: Json | null
+          created_at?: string
+          id?: string
+          lpg_status?: Json | null
+          price_data?: Json | null
+          stock_status?: Json | null
+          user_id: string
+        }
+        Update: {
+          ai_insights?: Json | null
+          created_at?: string
+          id?: string
+          lpg_status?: Json | null
+          price_data?: Json | null
+          stock_status?: Json | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monitoring_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      users: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          latitude: number | null
+          longitude: number | null
+          pincode: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          pincode?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          pincode?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

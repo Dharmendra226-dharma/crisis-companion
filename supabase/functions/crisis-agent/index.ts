@@ -141,6 +141,28 @@ Analyze changes and determine if the user should be alerted.`,
           type: insights.urgency === "high" ? "price" : "stock",
           message: alertMessage,
         });
+
+        // Send email notification via SMTP
+        try {
+          const emailHtml = generateAlertEmailHtml(user.email, insights, lpgStatus, priceData);
+          const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-alert-email`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({
+              to: user.email,
+              subject: `⚠️ Crisis Alert: ${insights.summary.substring(0, 60)}`,
+              htmlBody: emailHtml,
+            }),
+          });
+          if (!emailRes.ok) {
+            console.error(`Email send failed for ${user.email}:`, await emailRes.text());
+          }
+        } catch (emailErr) {
+          console.error(`Email error for ${user.email}:`, emailErr);
+        }
       }
 
       results.push({ userId: user.id, status: "processed", alerted: insights.shouldAlert });
@@ -197,4 +219,40 @@ function generatePriceData() {
       { name: "Rice (5kg)", current: riceCurrent, baseline: riceBase, change: +((riceCurrent - riceBase) / riceBase * 100).toFixed(1), label: riceCurrent > riceBase * 1.15 ? "spike" : "normal" },
     ],
   };
+}
+
+function generateAlertEmailHtml(email: string, insights: any, lpgStatus: any, priceData: any) {
+  const urgencyColors: Record<string, string> = { high: "#ef4444", medium: "#f59e0b", low: "#22c55e" };
+  const urgencyColor = urgencyColors[insights.urgency] || "#6b7280";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;">
+    <tr><td style="background:#1e293b;padding:24px 32px;">
+      <h1 style="color:#ffffff;margin:0;font-size:22px;">⚡ Crisis Companion Alert</h1>
+    </td></tr>
+    <tr><td style="padding:24px 32px;">
+      <div style="background:${urgencyColor}15;border-left:4px solid ${urgencyColor};padding:12px 16px;border-radius:6px;margin-bottom:20px;">
+        <strong style="color:${urgencyColor};text-transform:uppercase;font-size:12px;">Urgency: ${insights.urgency}</strong>
+        <p style="margin:8px 0 0;color:#334155;font-size:15px;">${insights.summary}</p>
+      </div>
+      ${insights.recommendations?.length ? `
+      <h3 style="color:#1e293b;margin:20px 0 10px;">Recommendations</h3>
+      <ul style="color:#475569;padding-left:20px;line-height:1.8;">
+        ${insights.recommendations.map((r: string) => `<li>${r}</li>`).join("")}
+      </ul>` : ""}
+      ${priceData?.items ? `
+      <h3 style="color:#1e293b;margin:20px 0 10px;">Price Watch</h3>
+      <table width="100%" cellpadding="8" style="border-collapse:collapse;font-size:14px;">
+        <tr style="background:#f8fafc;"><th style="text-align:left;border-bottom:1px solid #e2e8f0;">Item</th><th style="text-align:right;border-bottom:1px solid #e2e8f0;">Price</th><th style="text-align:right;border-bottom:1px solid #e2e8f0;">Change</th></tr>
+        ${priceData.items.map((item: any) => `<tr><td style="border-bottom:1px solid #f1f5f9;">${item.name}</td><td style="text-align:right;border-bottom:1px solid #f1f5f9;">₹${item.current}</td><td style="text-align:right;border-bottom:1px solid #f1f5f9;color:${item.change > 0 ? '#ef4444' : '#22c55e'};">${item.change > 0 ? '+' : ''}${item.change}%</td></tr>`).join("")}
+      </table>` : ""}
+    </td></tr>
+    <tr><td style="background:#f8fafc;padding:16px 32px;text-align:center;color:#94a3b8;font-size:12px;">
+      Crisis Companion Agent · Sent to ${email}
+    </td></tr>
+  </table>
+</body></html>`;
 }

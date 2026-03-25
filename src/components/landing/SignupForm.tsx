@@ -72,6 +72,16 @@ export const SignupForm = () => {
         .single();
 
       if (error) throw error;
+
+      // Send welcome email
+      try {
+        await supabase.functions.invoke("send-welcome-email", {
+          body: { to: email, type: "welcome" },
+        });
+      } catch (emailErr) {
+        console.error("Welcome email failed:", emailErr);
+      }
+
       navigate(`/dashboard?uid=${data.id}`);
     } catch (err: any) {
       toast({ title: "Something went wrong", description: err.message, variant: "destructive" });

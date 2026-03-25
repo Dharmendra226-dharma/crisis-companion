@@ -15,6 +15,8 @@ interface UserData {
   id: string;
   email: string;
   pincode: string | null;
+  latitude: number | null;
+  longitude: number | null;
   created_at: string;
 }
 
